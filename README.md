@@ -68,7 +68,7 @@
 
 ### 1.3.版本发布
 
-**发布版本（V1.1）**一方库如下：
+发布版本（V1.1）一方库如下：
 
 > 视频文件帧率计算、参数化剪辑、分切【openCVVedio2ImgScript.py】；
 >
@@ -114,7 +114,7 @@ git clone -b master https://gitee.com/tuoxieleng/video-obfuscation.git
 
 - **目录结构**
 
-![1650694878593](README/1650694878593-1650697701166.png)
+![输入图片说明](ReadMe/1650694878593-1650697701166.png)
 
 - **依赖更新**
 
@@ -320,15 +320,15 @@ F:\H_partTime\0002_projectInfo\0422\VideoObf
 VideoObfuscation>py openCVImg2VedioScript.py
 ```
 
-![1650677767178](README/1650677767178-1650697701167.png)
+![输入图片说明](ReadMe/1650677767178-1650697701167.png)
 
 ```
 VideoObfuscation>py openCVVedio2ImgScript.py
 ```
 
-![1650689513336](README/1650689513336-1650697701167.png)
+![输入图片说明](ReadMe/1650689513336-1650697701167.png)
 
-![1650689639809](README/1650689639809-1650697701167.png)
+![输入图片说明](ReadMe/1650689639809-1650697701167.png)
 
 - **测试说明**
 
