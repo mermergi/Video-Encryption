@@ -26,16 +26,16 @@ class VideoEncryptApp:
         self.root.minsize(600, 520)
         self.root.resizable(True, True)
 
-        self.mode = tk.StringVar(value='obfuscate')
+        self.mode = tk.StringVar(value='encrypt')
         self.input_path = tk.StringVar()
         self.output_path = tk.StringVar()
-        self.seed_var = tk.StringVar()
+        self.password_var = tk.StringVar()
+        self.password_visible = False
         self.keep_audio = tk.BooleanVar(value=True)
         self.output_format = tk.StringVar(value='mp4')
         self.ffmpeg_path_var = tk.StringVar()
         self.vlc_path_var = tk.StringVar()
 
-        self.generated_seed = None
         self.is_running = False
         self._player_initialized = False
 
@@ -98,12 +98,12 @@ class VideoEncryptApp:
         self._mode_frame.pack(fill=tk.X)
         mode_row = ttk.Frame(self._mode_frame)
         mode_row.pack()
-        self._radio_obfuscate = ttk.Radiobutton(mode_row,
-            variable=self.mode, value='obfuscate', command=self._on_mode_change)
-        self._radio_obfuscate.pack(side=tk.LEFT, padx=10)
-        self._radio_deobfuscate = ttk.Radiobutton(mode_row,
-            variable=self.mode, value='deobfuscate', command=self._on_mode_change)
-        self._radio_deobfuscate.pack(side=tk.LEFT, padx=10)
+        self._radio_encrypt = ttk.Radiobutton(mode_row,
+            variable=self.mode, value='encrypt', command=self._on_mode_change)
+        self._radio_encrypt.pack(side=tk.LEFT, padx=10)
+        self._radio_decrypt = ttk.Radiobutton(mode_row,
+            variable=self.mode, value='decrypt', command=self._on_mode_change)
+        self._radio_decrypt.pack(side=tk.LEFT, padx=10)
 
         # File selection
         self._file_frame = ttk.LabelFrame(tab, padding=10)
@@ -113,19 +113,18 @@ class VideoEncryptApp:
         self._lbl_output, _, self._btn_browse_out = self._add_file_row(
             self._file_frame, self.output_path, self._browse_output, 1)
 
-        # Seed
-        self._seed_frame = ttk.LabelFrame(tab, padding=10)
-        self._seed_frame.pack(fill=tk.X, pady=(10, 0))
-        self._seed_info_label = ttk.Label(self._seed_frame, foreground='#666')
-        self._seed_info_label.pack(anchor='w')
-        seed_row = ttk.Frame(self._seed_frame)
-        seed_row.pack(fill=tk.X, pady=(5, 0))
-        self.seed_entry = ttk.Entry(seed_row, textvariable=self.seed_var,
-                                     font=('Consolas', 11), state='readonly')
-        self.seed_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.copy_btn = ttk.Button(seed_row, command=self._copy_seed,
-                                    state='disabled')
-        self.copy_btn.pack(side=tk.LEFT, padx=(5, 0))
+        # Password
+        self._password_frame = ttk.LabelFrame(tab, padding=10)
+        self._password_frame.pack(fill=tk.X, pady=(10, 0))
+        self._password_info_label = ttk.Label(self._password_frame, foreground='#666')
+        self._password_info_label.pack(anchor='w')
+        pw_row = ttk.Frame(self._password_frame)
+        pw_row.pack(fill=tk.X, pady=(5, 0))
+        self.password_entry = ttk.Entry(pw_row, textvariable=self.password_var,
+                                        font=('Consolas', 11), show='*')
+        self.password_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.toggle_pw_btn = ttk.Button(pw_row, command=self._toggle_password_show)
+        self.toggle_pw_btn.pack(side=tk.LEFT, padx=(5, 0))
 
         # Progress
         self._progress_frame = ttk.LabelFrame(tab, padding=10)
@@ -482,17 +481,18 @@ class VideoEncryptApp:
 
         # Main tab
         self._mode_frame.config(text=lang.tr("label.mode"))
-        self._radio_obfuscate.config(text=lang.tr("radio.obfuscate"))
-        self._radio_deobfuscate.config(text=lang.tr("radio.deobfuscate"))
+        self._radio_encrypt.config(text=lang.tr("radio.encrypt"))
+        self._radio_decrypt.config(text=lang.tr("radio.decrypt"))
         self._file_frame.config(text=lang.tr("label.file"))
         self._lbl_input.config(text=lang.tr("label.input_video"))
         self._lbl_output.config(text=lang.tr("label.output_path"))
         self._btn_browse_in.config(text=lang.tr("button.browse"))
         self._btn_browse_out.config(text=lang.tr("button.browse"))
 
-        self._seed_frame.config(text=lang.tr("label.seed"))
-        self._refresh_seed_info()
-        self.copy_btn.config(text=lang.tr("button.copy"))
+        self._password_frame.config(text=lang.tr("label.password"))
+        self._refresh_password_info()
+        key = "password.hide" if self.password_visible else "password.show"
+        self.toggle_pw_btn.config(text=lang.tr(key))
 
         self._progress_frame.config(text=lang.tr("label.progress"))
         self._refresh_process_button()
@@ -546,17 +546,14 @@ class VideoEncryptApp:
                 text=self.lang.tr("settings.vlc_not_found"),
                 foreground='#999')
 
-    def _refresh_seed_info(self):
-        is_obf = self.mode.get() == 'obfuscate'
-        if self.generated_seed is not None and is_obf:
-            self._seed_info_label.config(
-                text=self.lang.tr("seed.saved"), foreground='#d00')
-        elif is_obf:
-            self._seed_info_label.config(
-                text=self.lang.tr("seed.info_obfuscate"), foreground='#666')
+    def _refresh_password_info(self):
+        is_enc = self.mode.get() == 'encrypt'
+        if is_enc:
+            self._password_info_label.config(
+                text=self.lang.tr("password.info_encrypt"), foreground='#666')
         else:
-            self._seed_info_label.config(
-                text=self.lang.tr("seed.info_deobfuscate"), foreground='#666')
+            self._password_info_label.config(
+                text=self.lang.tr("password.info_decrypt"), foreground='#666')
 
     def _refresh_process_button(self):
         if self.is_running:
@@ -567,28 +564,10 @@ class VideoEncryptApp:
     # ── Mode switch ───────────────────────────────────────────
 
     def _on_mode_change(self):
-        is_obf = self.mode.get() == 'obfuscate'
-
-        if not is_obf and self.generated_seed is not None:
-            ret = messagebox.askyesno(
-                self.lang.tr("msgbox.seed_unsaved.title"),
-                self.lang.tr("msgbox.seed_unsaved.message",
-                              seed=self.generated_seed),
-                icon='warning')
-            if not ret:
-                self.mode.set('obfuscate')
-                return
-
         self.input_path.set('')
         self.output_path.set('')
-
-        self.seed_entry.config(state='normal')
-        self.seed_var.set('' if is_obf else self.lang.tr("seed.placeholder"))
-        self.seed_entry.config(state='readonly' if is_obf else 'normal')
-        self.copy_btn.config(state='disabled')
-        self.generated_seed = None
-
-        self._refresh_seed_info()
+        self.password_var.set('')
+        self._refresh_password_info()
         self.progress_var.set(0)
         self.status_var.set(self.lang.tr("status.ready"))
 
@@ -623,11 +602,15 @@ class VideoEncryptApp:
             return
         d = os.path.dirname(inp)
         name = os.path.splitext(os.path.basename(inp))[0]
-        ext = self.output_format.get() or 'mp4'
-        mode_label = 'obfuscated' if self.mode.get() == 'obfuscate' else 'restored'
-        self.output_path.set(os.path.join(d, f'{name}_{mode_label}.{ext}'))
+        if self.mode.get() == 'encrypt':
+            self.output_path.set(os.path.join(d, f'{name}_encrypted.ve2'))
+        else:
+            ext = self.output_format.get() or 'mp4'
+            self.output_path.set(os.path.join(d, f'{name}_decrypted.{ext}'))
 
     def _on_format_change(self, *_):
+        if self.mode.get() == 'encrypt':
+            return
         inp = self.input_path.get()
         out = self.output_path.get()
         if not inp or not out:
@@ -674,15 +657,13 @@ class VideoEncryptApp:
                 self.lang.tr("msgbox.error.title"),
                 self.lang.tr("msgbox.vlc_error.message", path=exe))
 
-    # ── Seed ──────────────────────────────────────────────────
+    # ── Password ───────────────────────────────────────────────
 
-    def _copy_seed(self):
-        if self.generated_seed:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(str(self.generated_seed))
-            self.copy_btn.config(text=self.lang.tr("button.copied"))
-            self.root.after(2000,
-                lambda: self.copy_btn.config(text=self.lang.tr("button.copy")))
+    def _toggle_password_show(self):
+        self.password_visible = not self.password_visible
+        self.password_entry.config(show='' if self.password_visible else '*')
+        key = "password.hide" if self.password_visible else "password.show"
+        self.toggle_pw_btn.config(text=self.lang.tr(key))
 
     # ── Progress callback ─────────────────────────────────────
 
@@ -714,28 +695,26 @@ class VideoEncryptApp:
                 self.lang.tr("msgbox.error.title"),
                 self.lang.tr("msgbox.error.no_output"))
 
-        keep = self.keep_audio.get()
-        if keep and not _check_ffmpeg():
-            ret = messagebox.askyesno(
-                self.lang.tr("msgbox.ffmpeg_not_found.title"),
-                self.lang.tr("msgbox.ffmpeg_not_found.message"))
-            if not ret:
-                return
-            keep = False
+        password = self.password_var.get()
+        if not password:
+            return messagebox.showerror(
+                self.lang.tr("msgbox.error.title"),
+                self.lang.tr("msgbox.error.no_password"))
+        if len(password) < 8:
+            return messagebox.showerror(
+                self.lang.tr("msgbox.error.title"),
+                self.lang.tr("msgbox.error.password_short"))
 
-        seed = None
-        if mode == 'deobfuscate':
-            seed_str = self.seed_var.get().strip()
-            if not seed_str:
+        if mode == 'encrypt':
+            from tkinter import simpledialog
+            confirm = simpledialog.askstring(
+                self.lang.tr("msgbox.confirm_password.title"),
+                self.lang.tr("msgbox.confirm_password.message"),
+                show='*', parent=self.root)
+            if confirm != password:
                 return messagebox.showerror(
                     self.lang.tr("msgbox.error.title"),
-                    self.lang.tr("msgbox.error.no_seed"))
-            try:
-                seed = int(seed_str)
-            except ValueError:
-                return messagebox.showerror(
-                    self.lang.tr("msgbox.error.title"),
-                    self.lang.tr("msgbox.error.seed_invalid"))
+                    self.lang.tr("msgbox.error.password_mismatch"))
 
         self.is_running = True
         self.process_btn.config(state='disabled',
@@ -744,17 +723,16 @@ class VideoEncryptApp:
         self.status_var.set(self.lang.tr("status.initializing"))
 
         t = threading.Thread(target=self._run_process,
-                             args=(inp, out, mode, seed, keep), daemon=True)
+                             args=(inp, out, mode, password), daemon=True)
         t.start()
 
-    def _run_process(self, inp, out, mode, seed, keep_audio):
+    def _run_process(self, inp, out, mode, password):
         try:
             result = process_video(
                 input_path=inp,
                 output_path=out,
                 mode=mode,
-                keep_audio=keep_audio,
-                seed=seed,
+                password=password,
                 progress_callback=self._progress_callback,
             )
             self.root.after(0, lambda: self._on_done(result))
@@ -763,15 +741,6 @@ class VideoEncryptApp:
 
     def _on_done(self, result):
         self.progress_var.set(100)
-        if self.mode.get() == 'obfuscate':
-            sd = result.get('seed')
-            self.generated_seed = sd
-            self.seed_entry.config(state='normal')
-            self.seed_var.set(str(sd))
-            self.seed_entry.config(state='readonly')
-            self.copy_btn.config(state='normal')
-            self._seed_info_label.config(
-                text=self.lang.tr("seed.saved"), foreground='#d00')
         self.status_var.set(self.lang.tr("status.done"))
         self.is_running = False
         self.process_btn.config(state='normal',

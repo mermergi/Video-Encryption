@@ -1,6 +1,5 @@
 """
-视频合成脚本 —— 从原视频直接流式读取 + 混淆/解混淆 + 输出
-无需中间图片文件，可选处理音频。
+视频加密/解密脚本 (v2.0 — AES 文件级加密)
 
 用法:
     py cli.py
@@ -8,63 +7,61 @@
 依赖 Config/config.ini 中的:
     VIDEO_PATH       — 原始视频路径
     IMG_VIDEO_PATH   — 输出目录
-    MODE             — obfuscate 或 deobfuscate（可选，默认 obfuscate）
-    SEED             — 解密种子（解密时必须填写，混淆时留空自动生成）
+    MODE             — encrypt 或 decrypt（可选，默认 encrypt）
+    PASSWORD         — 加密/解密密码
 """
 
 import os
 import sys
+import getpass
 
 sys.path.append(os.path.join(os.path.split(os.path.realpath(__file__))[0], 'Config'))
 from config import global_config
 
 # 导入统一处理管线
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
+import warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 from core import process_video
 
 
 def main():
     print("=" * 60)
-    print("CLI — 视频混淆/解混淆 (流式处理)")
+    print("CLI — Video Encryption Tool v2.0")
     print("=" * 60)
 
     video_path = global_config.getRaw('config', 'VIDEO_PATH')
     output_dir = global_config.getRaw('config', 'IMG_VIDEO_PATH')
 
-    # 从配置读取模式和种子
-    mode = global_config.getOpt('config', 'MODE', fallback='obfuscate')
-    seed = None
-    seed_str = global_config.getOpt('config', 'SEED', fallback='').strip()
-    if seed_str:
-        seed = int(seed_str)
+    mode = global_config.getOpt('config', 'MODE', fallback='encrypt')
+    if mode in ('obfuscate', 'deobfuscate'):
+        mode = 'encrypt' if mode == 'obfuscate' else 'decrypt'
 
-    mode_label = '混淆' if mode == 'obfuscate' else '解混淆'
-    print(f"输入视频: {video_path}")
-    print(f"输出目录: {output_dir}")
-    print(f"模式:     {mode_label}")
-    if seed is not None:
-        print(f"种子:     {seed}")
+    password = global_config.getOpt('config', 'PASSWORD', fallback='').strip()
+    if not password:
+        password = getpass.getpass("Enter password: ")
+
+    mode_label = 'Encrypt' if mode == 'encrypt' else 'Decrypt'
+    print(f"Input:  {video_path}")
+    print(f"Output: {output_dir}")
+    print(f"Mode:   {mode_label}")
 
     if not os.path.exists(video_path):
-        raise FileNotFoundError(f"视频文件不存在: {video_path}")
+        raise FileNotFoundError(f"Video file not found: {video_path}")
 
-    output_path = os.path.join(output_dir, '0422Result.mp4')
+    output_path = os.path.join(output_dir, 'result.ve2' if mode == 'encrypt' else 'result.mp4')
 
     result = process_video(
         input_path=video_path,
         output_path=output_path,
         mode=mode,
-        keep_audio=True,
-        block_size=16,
-        seed=seed,
+        password=password,
     )
 
-    if mode == 'obfuscate':
-        print(f"\n=== 加密种子（请务必保存，解密还原时需要此种子）: {result['seed']} ===")
+    if mode == 'encrypt':
+        print(f"\nEncryption complete. Remember your password!")
 
-    print(f"\n输出文件: {output_path}")
-    print("=" * 60)
-    print("CLI execute End !")
+    print(f"\nOutput: {output_path}")
     print("=" * 60)
 
     return output_path

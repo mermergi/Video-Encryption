@@ -12,7 +12,7 @@ a = Analysis(
         (os.path.join(_project_root, 'ffmpeg', 'ffprobe.exe'), 'ffmpeg'),
     ],
     datas=[('Config', 'Config')],
-    hiddenimports=['core'],
+    hiddenimports=['core', 'pyaes', 'crypto_layer'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

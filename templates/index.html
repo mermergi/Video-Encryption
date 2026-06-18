@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>视频混淆处理工具</title>
+    <title>Video Encryption Tool</title>
     <style>
         * {
             margin: 0;
@@ -137,6 +137,42 @@
             font-size: 12px;
         }
 
+        .password-input-area {
+            margin-bottom: 20px;
+        }
+
+        .password-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .password-row input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            outline: none;
+            box-sizing: border-box;
+            transition: border-color 0.3s;
+        }
+
+        .password-row input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+        }
+
+        .toggle-btn {
+            padding: 12px 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
         .progress-container {
             display: none;
             margin-bottom: 20px;
@@ -260,47 +296,43 @@
             color: #3c3;
             border: 1px solid #cfc;
         }
-
-        #seedInput:focus {
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎬 视频混淆处理工具</h1>
-            <p>支持混淆加密和解密还原，可逆算法保证数据安全</p>
+            <h1>Video Encryption Tool</h1>
+            <p>AES-256 encrypted video files — password-protected</p>
         </div>
 
         <div class="alert alert-error" id="errorAlert"></div>
         <div class="alert alert-success" id="successAlert"></div>
 
-        <!-- 模式选择 -->
+        <!-- Mode selector -->
         <div class="mode-selector">
-            <button class="mode-btn active" id="obfuscateBtn" onclick="setMode('obfuscate')">
-                混淆加密
+            <button class="mode-btn active" id="encryptBtn" onclick="setMode('encrypt')">
+                Encrypt
             </button>
-            <button class="mode-btn" id="deobfuscateBtn" onclick="setMode('deobfuscate')">
-                解密还原
+            <button class="mode-btn" id="decryptBtn" onclick="setMode('decrypt')">
+                Decrypt
             </button>
         </div>
 
-        <!-- 种子输入（解密模式显示） -->
-        <div class="seed-input-area" id="seedInputArea" style="display:none; margin-bottom: 20px;">
-            <label style="display:block; margin-bottom: 6px; color:#555; font-size:14px; font-weight:500;">
-                加密种子（必填）
+        <!-- Password input (always visible) -->
+        <div class="password-input-area">
+            <label style="display:block; margin-bottom:6px; color:#555; font-size:14px; font-weight:500;">
+                Password
             </label>
-            <input type="text" id="seedInput" placeholder="请输入混淆时生成的加密种子"
-                   style="width:100%; padding:12px 15px; border:2px solid #e0e0e0; border-radius:10px;
-                          font-size:14px; outline:none; box-sizing:border-box; transition:border-color 0.3s;">
+            <div class="password-row">
+                <input type="password" id="passwordInput" placeholder="Enter password (min 8 characters)">
+                <button class="toggle-btn" id="togglePasswordBtn" onclick="togglePassword()">Show</button>
+            </div>
         </div>
 
         <div class="upload-area" id="uploadArea">
-            <div class="upload-icon">📁</div>
-            <div class="upload-text">点击或拖拽视频文件到此处</div>
-            <div class="upload-hint">支持 MP4、AVI、MOV 等格式，最大 500MB</div>
+            <div class="upload-icon"></div>
+            <div class="upload-text">Click or drag video file here</div>
+            <div class="upload-hint">Supports MP4, AVI, MOV, etc. Max 500MB</div>
         </div>
 
         <input type="file" id="fileInput" accept="video/*">
@@ -312,36 +344,29 @@
 
         <div class="progress-container" id="progressContainer">
             <div class="progress-info">
-                <span class="progress-step" id="progressStep">准备中</span>
+                <span class="progress-step" id="progressStep">Preparing</span>
                 <span class="progress-percent" id="progressPercent">0%</span>
             </div>
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill" style="width: 0%"></div>
             </div>
-            <div class="progress-message" id="progressMessage">正在初始化...</div>
+            <div class="progress-message" id="progressMessage">Initializing...</div>
         </div>
 
         <button class="btn btn-primary" id="processBtn" disabled>
-            开始处理
+            Start Processing
         </button>
 
         <div class="result-container" id="resultContainer">
-            <div class="result-text">视频处理完成！</div>
-            <div id="resultSeedArea" style="display:none; background:#f0f2ff; border-radius:10px; padding:15px; margin-bottom:15px; text-align:center;">
-                <div style="color:#666; font-size:13px; margin-bottom:5px;">加密种子（请务必保存，解密时需使用）</div>
-                <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
-                    <span id="resultSeed" style="font-size:20px; font-weight:700; color:#667eea; font-family:monospace;"></span>
-                    <button onclick="copySeed()" style="padding:6px 14px; background:#667eea; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">复制</button>
-                </div>
-            </div>
+            <div class="result-text">Processing complete!</div>
             <button class="btn btn-success" id="downloadBtn">
-                下载处理后的视频
+                Download
             </button>
         </div>
     </div>
 
     <script>
-        // DOM 元素
+        // DOM elements
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
         const fileInfo = document.getElementById('fileInfo');
@@ -357,39 +382,40 @@
         const downloadBtn = document.getElementById('downloadBtn');
         const errorAlert = document.getElementById('errorAlert');
         const successAlert = document.getElementById('successAlert');
+        const passwordInput = document.getElementById('passwordInput');
 
         let selectedFile = null;
         let progressInterval = null;
-        let currentMode = 'obfuscate'; // 'obfuscate' 或 'deobfuscate'
+        let currentMode = 'encrypt';
 
-        // 设置模式
-        function setMode(mode) {
-            currentMode = mode;
-            document.getElementById('obfuscateBtn').classList.toggle('active', mode === 'obfuscate');
-            document.getElementById('deobfuscateBtn').classList.toggle('active', mode === 'deobfuscate');
-
-            // 种子输入区域：解密模式显示，混淆模式隐藏
-            document.getElementById('seedInputArea').style.display = mode === 'deobfuscate' ? 'block' : 'none';
-
-            // 更新按钮文字
-            if (mode === 'obfuscate') {
-                processBtn.textContent = '开始混淆';
+        // Toggle password visibility
+        function togglePassword() {
+            const btn = document.getElementById('togglePasswordBtn');
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                btn.textContent = 'Hide';
             } else {
-                processBtn.textContent = '开始解密';
+                passwordInput.type = 'password';
+                btn.textContent = 'Show';
             }
         }
 
-        // 点击上传区域
+        // Set mode
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('encryptBtn').classList.toggle('active', mode === 'encrypt');
+            document.getElementById('decryptBtn').classList.toggle('active', mode === 'decrypt');
+            processBtn.textContent = mode === 'encrypt' ? 'Encrypt' : 'Decrypt';
+        }
+
         uploadArea.addEventListener('click', () => {
             fileInput.click();
         });
 
-        // 文件选择
         fileInput.addEventListener('change', (e) => {
             handleFile(e.target.files[0]);
         });
 
-        // 拖拽上传
         uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
             uploadArea.classList.add('dragover');
@@ -406,38 +432,28 @@
             if (file && file.type.startsWith('video/')) {
                 handleFile(file);
             } else {
-                showError('请上传视频文件');
+                showError('Please upload a video file');
             }
         });
 
-        // 处理文件
         function handleFile(file) {
             if (!file) return;
-
-            // 验证文件类型
             if (!file.type.startsWith('video/')) {
-                showError('请上传视频文件');
+                showError('Please upload a video file');
                 return;
             }
-
-            // 验证文件大小 (500MB)
             if (file.size > 500 * 1024 * 1024) {
-                showError('文件大小不能超过 500MB');
+                showError('File size must not exceed 500MB');
                 return;
             }
-
             selectedFile = file;
-
-            // 显示文件信息
             fileName.textContent = file.name;
             fileSize.textContent = formatFileSize(file.size);
             fileInfo.classList.add('show');
             processBtn.disabled = false;
-
             hideAlert();
         }
 
-        // 格式化文件大小
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 Bytes';
             const k = 1024;
@@ -446,18 +462,25 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
-        // 开始处理
         processBtn.addEventListener('click', async () => {
             if (!selectedFile) return;
 
-            // 禁用按钮
+            const password = passwordInput.value;
+            if (!password) {
+                showError('Please enter a password');
+                return;
+            }
+            if (password.length < 8) {
+                showError('Password must be at least 8 characters');
+                return;
+            }
+
             processBtn.disabled = true;
             progressContainer.classList.add('show');
             resultContainer.classList.remove('show');
 
             try {
-                // 上传文件
-                updateProgressUI('upload', 0, '正在上传文件...');
+                updateProgressUI('upload', 0, 'Uploading...');
                 const formData = new FormData();
                 formData.append('file', selectedFile);
 
@@ -467,43 +490,27 @@
                 });
 
                 const uploadResult = await uploadResponse.json();
-
                 if (!uploadResult.success) {
                     throw new Error(uploadResult.message);
                 }
 
-                updateProgressUI('upload', 100, '文件上传完成');
+                updateProgressUI('upload', 100, 'Upload complete');
 
-                // 解密模式需要种子
-                if (currentMode === 'deobfuscate') {
-                    const seedVal = document.getElementById('seedInput').value.trim();
-                    if (!seedVal) {
-                        throw new Error('解密模式需要提供加密种子');
-                    }
-                }
-
-                // 开始处理 - 根据模式选择不同的API
-                const processUrl = currentMode === 'obfuscate' ? '/api/process' : '/api/deobfuscate';
-
-                const seedVal = document.getElementById('seedInput').value.trim();
-                const processResponse = await fetch(processUrl, {
+                const processResponse = await fetch('/api/process', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         file_path: uploadResult.file_path,
-                        seed: seedVal ? parseInt(seedVal) : null
+                        password: password,
+                        mode: currentMode
                     })
                 });
 
                 const processResult = await processResponse.json();
-
                 if (!processResult.success) {
                     throw new Error(processResult.message);
                 }
 
-                // 开始轮询进度
                 startProgressPolling();
 
             } catch (error) {
@@ -513,106 +520,52 @@
             }
         });
 
-        // 更新进度UI
         function updateProgressUI(step, percent, message) {
-            const steps = {
-                'upload': '上传文件',
-                'split': '分割视频',
-                'merge': '合成视频',
-                'done': '处理完成'
-            };
-
-            progressStep.textContent = steps[step] || step;
+            progressStep.textContent = step;
             progressFill.style.width = percent + '%';
             progressPercent.textContent = Math.round(percent) + '%';
             progressMessage.textContent = message;
         }
 
-        // 轮询进度
         function startProgressPolling() {
-            if (progressInterval) {
-                clearInterval(progressInterval);
-            }
-
+            if (progressInterval) clearInterval(progressInterval);
             progressInterval = setInterval(async () => {
                 try {
                     const response = await fetch('/api/progress');
                     const data = await response.json();
-
-                    updateProgressUI(
-                        data.current_step,
-                        data.progress,
-                        data.message
-                    );
-
+                    updateProgressUI(data.current_step, data.progress, data.message);
                     if (data.status === 'completed') {
                         clearInterval(progressInterval);
-                        // 混淆模式下显示种子
-                        const seedArea = document.getElementById('resultSeedArea');
-                        const seedEl = document.getElementById('resultSeed');
-                        if (currentMode === 'obfuscate' && data.seed) {
-                            seedEl.textContent = data.seed;
-                            seedArea.style.display = 'block';
-                        } else {
-                            seedArea.style.display = 'none';
-                        }
                         resultContainer.classList.add('show');
                         processBtn.disabled = false;
-                        showSuccess(currentMode === 'obfuscate' ? '视频混淆完成！' : '视频解密完成！');
+                        showSuccess(currentMode === 'encrypt' ? 'Encryption complete!' : 'Decryption complete!');
                     } else if (data.status === 'error') {
                         clearInterval(progressInterval);
                         showError(data.message);
                         processBtn.disabled = false;
                     }
                 } catch (error) {
-                    console.error('获取进度失败:', error);
+                    console.error('Polling error:', error);
                 }
             }, 1000);
         }
 
-        // 复制种子
-        function copySeed() {
-            const seedText = document.getElementById('resultSeed').textContent;
-            navigator.clipboard.writeText(seedText).then(() => {
-                const btn = event.target;
-                const original = btn.textContent;
-                btn.textContent = '已复制';
-                btn.style.background = '#38ef7d';
-                setTimeout(() => {
-                    btn.textContent = original;
-                    btn.style.background = '#667eea';
-                }, 2000);
-            }).catch(() => {
-                // fallback
-                const textarea = document.createElement('textarea');
-                textarea.value = seedText;
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
-            });
-        }
-
-        // 下载
         downloadBtn.addEventListener('click', () => {
             window.location.href = '/api/download';
         });
 
-        // 显示错误
         function showError(message) {
             errorAlert.textContent = message;
             errorAlert.classList.add('show');
             successAlert.classList.remove('show');
         }
 
-        // 显示成功
         function showSuccess(message) {
             successAlert.textContent = message;
             successAlert.classList.add('show');
             errorAlert.classList.remove('show');
         }
 
-        // 隐藏提示
         function hideAlert() {
             errorAlert.classList.remove('show');
             successAlert.classList.remove('show');
