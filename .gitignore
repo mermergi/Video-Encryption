@@ -31,6 +31,4 @@ dist_exe/
 # Bundled binaries (too large for git)
 ffmpeg/
 
-# Package scripts
-package_release.py
 version.txt
