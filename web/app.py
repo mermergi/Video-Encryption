@@ -26,7 +26,9 @@ progress_data = {
     'current_step': '',
     'progress': 0,
     'message': '等待开始...',
-    'output_file': None
+    'output_file': None,
+    'seed': None,
+    'original_audio_len': None,
 }
 
 
@@ -50,7 +52,7 @@ def _progress_callback(percent, message):
     update_progress('processing', step, percent, message)
 
 
-def process_video_task(file_path, mode='obfuscate'):
+def process_video_task(file_path, mode='obfuscate', seed=None, original_audio_len=None):
     """在后台线程中处理视频"""
     try:
         from core import process_video
@@ -70,13 +72,18 @@ def process_video_task(file_path, mode='obfuscate'):
         update_progress('processing', 'start', 0,
                         f"开始{'混淆' if mode == 'obfuscate' else '解混淆'}...")
 
-        process_video(
+        result = process_video(
             input_path=file_path,
             output_path=output_path,
             mode=mode_str,
             keep_audio=True,
+            seed=seed,
+            original_audio_len=original_audio_len,
             progress_callback=_progress_callback,
         )
+
+        progress_data['seed'] = result.get('seed')
+        progress_data['original_audio_len'] = result.get('original_audio_len')
 
         update_progress('completed', 'done', 100,
                         f"处理完成！",
@@ -122,13 +129,14 @@ def upload():
 def process():
     data = request.get_json()
     file_path = data.get('file_path')
+    seed = data.get('seed')
 
     if not file_path or not os.path.exists(file_path):
         return jsonify({'success': False, 'message': '文件不存在'})
 
     update_progress('processing', 'start', 0, '开始混淆视频...')
     thread = threading.Thread(target=process_video_task,
-                              args=(file_path, 'obfuscate'))
+                              args=(file_path, 'obfuscate', seed))
     thread.daemon = True
     thread.start()
 
@@ -139,13 +147,19 @@ def process():
 def deobfuscate():
     data = request.get_json()
     file_path = data.get('file_path')
+    seed = data.get('seed')
 
     if not file_path or not os.path.exists(file_path):
         return jsonify({'success': False, 'message': '文件不存在'})
+    if seed is None:
+        return jsonify({'success': False, 'message': '解密需要提供加密种子（seed）'})
+
+    # 如果之前混淆时存了原始音频长度，传回去做精确裁剪
+    orig_len = progress_data.get('original_audio_len')
 
     update_progress('processing', 'start', 0, '开始解混淆视频...')
     thread = threading.Thread(target=process_video_task,
-                              args=(file_path, 'deobfuscate'))
+                              args=(file_path, 'deobfuscate', seed, orig_len))
     thread.daemon = True
     thread.start()
 

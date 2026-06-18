@@ -18,5 +18,12 @@ class Config(object):
     def getRaw(self, section, name):
         return self._configRaw.get(section, name)
 
+    def getOpt(self, section, name, fallback=None):
+        """带 fallback 的读取"""
+        try:
+            return self._config.get(section, name)
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            return fallback
+
 
 global_config = Config()

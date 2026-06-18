@@ -14,6 +14,13 @@ import json as _json
 import wave
 import tempfile
 import shutil
+import sys as _sys
+
+# Windows 上隐藏 ffmpeg 控制台窗口
+if _sys.platform == 'win32':
+    _SUB_FLAGS = {'creationflags': subprocess.CREATE_NO_WINDOW}
+else:
+    _SUB_FLAGS = {}
 
 
 # ============================================================
@@ -21,7 +28,7 @@ import shutil
 # ============================================================
 
 class VideoObfuscator:
-    """视频混淆器 —— 块置换 + 通道交换"""
+    """视频混淆器 —— 块置换 + 通道交换（种子驱动多参数派生）"""
 
     def __init__(self, block_size=16, seed=42):
         self.block_size = block_size
@@ -32,7 +39,38 @@ class VideoObfuscator:
         self.num_blocks_y = None
         self.permutation = None
         self.inv_permutation = None
-        self._rng = random.Random(seed)
+        # 从主种子派生所有加密参数
+        self._channel_map = None
+        self._channel_inv = None
+        self._perm_seed = None
+        self._init_derived_params()
+        self._rng = random.Random(self._perm_seed)
+
+    def _init_derived_params(self):
+        """从主种子派生：块置换种子 + 颜色通道置换方案（6种之一）"""
+        rng = random.Random(self.seed)
+        self._perm_seed = rng.randint(0, 2**31 - 1)
+        # 6 种可能的 BGR 通道置换
+        perms = [
+            [0, 1, 2],  # BGR -> BGR (恒等)
+            [0, 2, 1],  # BGR -> BRG
+            [1, 0, 2],  # BGR -> GBR
+            [1, 2, 0],  # BGR -> GRB
+            [2, 0, 1],  # BGR -> RBG
+            [2, 1, 0],  # BGR -> RGB
+        ]
+        self._channel_map = perms[rng.randint(0, 5)]
+        # 计算逆映射（用于解混淆）
+        self._channel_inv = [0, 0, 0]
+        for i, p in enumerate(self._channel_map):
+            self._channel_inv[p] = i
+
+    def _apply_channel_map(self, frame, mapping):
+        """对帧应用任意通道置换"""
+        result = np.zeros_like(frame)
+        for dst, src in enumerate(mapping):
+            result[:, :, dst] = frame[:, :, src]
+        return result
 
     def _generate_permutation(self, num_blocks):
         perm = list(range(num_blocks))
@@ -74,24 +112,6 @@ class VideoObfuscator:
             frame[y_start:y_start+src_h, x_start:x_start+src_w] = block[:src_h, :src_w]
         return frame
 
-    @staticmethod
-    def _swap_channels(frame):
-        """BGR -> BRG"""
-        result = np.zeros_like(frame)
-        result[:, :, 0] = frame[:, :, 0]
-        result[:, :, 1] = frame[:, :, 2]
-        result[:, :, 2] = frame[:, :, 1]
-        return result
-
-    @staticmethod
-    def _restore_channels(frame):
-        """BRG -> BGR (与 _swap_channels 相同，对称操作)"""
-        result = np.zeros_like(frame)
-        result[:, :, 0] = frame[:, :, 0]
-        result[:, :, 1] = frame[:, :, 2]
-        result[:, :, 2] = frame[:, :, 1]
-        return result
-
     def _auto_adjust_block_size(self, h, w):
         """将 block_size 调整为能同时整除宽高的最大值（保证无损置换）。"""
         bs = min(self.block_size, w, h)
@@ -99,7 +119,7 @@ class VideoObfuscator:
             bs -= 1
         if bs != self.block_size:
             self.block_size = bs
-            self._rng = random.Random(self.seed)
+            self._rng = random.Random(self._perm_seed)
 
     def obfuscate_frame(self, frame):
         if self.width is None:
@@ -114,7 +134,7 @@ class VideoObfuscator:
         blocks = self._split_into_blocks(frame)
         permuted = [blocks[i] for i in self.permutation]
         result = self._merge_blocks(permuted)
-        result = self._swap_channels(result)
+        result = self._apply_channel_map(result, self._channel_map)
         return result
 
     def deobfuscate_frame(self, frame):
@@ -127,7 +147,7 @@ class VideoObfuscator:
             self.permutation = self._generate_permutation(num_blocks)
             self.inv_permutation = self._generate_inv_permutation(self.permutation)
 
-        result = self._restore_channels(frame)
+        result = self._apply_channel_map(frame, self._channel_inv)
         blocks = self._split_into_blocks(result)
         restored = [blocks[i] for i in self.inv_permutation]
         result = self._merge_blocks(restored)
@@ -139,14 +159,17 @@ class VideoObfuscator:
 # ============================================================
 
 class AudioObfuscator:
-    """音频混淆器 —— 时间段置换（可逆）"""
+    """音频混淆器 —— 时间段置换（可逆，种子驱动多参数派生）"""
 
-    def __init__(self, seed=42, segment_duration_ms=50):
+    def __init__(self, seed=42):
         self.seed = seed
-        self.segment_duration_ms = segment_duration_ms
+        # 从主种子派生：置换种子 + 时间段长度 (30-80ms 随机)
+        rng = random.Random(seed)
+        self._perm_seed = rng.randint(0, 2**31 - 1)
+        self.segment_duration_ms = rng.randint(30, 80)
         self.permutation = None
         self.inv_permutation = None
-        self._rng = random.Random(seed)
+        self._rng = random.Random(self._perm_seed)
 
     def _generate_permutation(self, num_segments):
         perm = list(range(num_segments))
@@ -161,6 +184,7 @@ class AudioObfuscator:
         return inv
 
     def _split_segments(self, pcm, segment_size):
+        """按 segment_size 将 PCM 分段，最后一段不足则补零（保证所有段长度一致）。"""
         segments = []
         for i in range(0, len(pcm), segment_size):
             seg = pcm[i:i + segment_size]
@@ -195,27 +219,39 @@ class AudioObfuscator:
         segments = self._split_segments(pcm_data, seg_size)
         permuted = [segments[i] for i in self.permutation]
         result = np.concatenate(permuted)
-        return result[:len(pcm_data)]
+        return result
 
-    def deobfuscate(self, pcm_data, sample_rate):
+    def deobfuscate(self, pcm_data, sample_rate, original_length=None):
         """
         解混淆 PCM 音频数据。
 
         Args:
             pcm_data: np.int16 一维数组
             sample_rate: 采样率 (Hz)
+            original_length: 原始音频采样数（用于裁剪因段补齐导致的额外零值）
 
         Returns:
             还原后的 np.int16 一维数组
         """
-        if self.inv_permutation is None:
-            self._init_for_length(len(pcm_data), sample_rate)
-
         seg_size = int(sample_rate * self.segment_duration_ms / 1000)
+
+        # AAC 编码会将音频补齐到 1024 帧边界，裁剪多余部分使段边界对齐
+        effective_len = len(pcm_data)
+        if original_length is not None:
+            expected_padded = ((original_length + seg_size - 1) // seg_size) * seg_size
+            if effective_len > expected_padded:
+                pcm_data = pcm_data[:expected_padded]
+                effective_len = expected_padded
+
+        if self.inv_permutation is None:
+            self._init_for_length(effective_len, sample_rate)
+
         segments = self._split_segments(pcm_data, seg_size)
         restored = [segments[i] for i in self.inv_permutation]
         result = np.concatenate(restored)
-        return result[:len(pcm_data)]
+        if original_length is not None:
+            result = result[:original_length]
+        return result
 
 
 # ============================================================
@@ -223,12 +259,29 @@ class AudioObfuscator:
 # ============================================================
 
 FFMPEG_AVAILABLE = None
+FFMPEG_PATH = None
+
+
+def set_ffmpeg_path(path):
+    """设置 ffmpeg 可执行文件路径（用于打包后的应用）"""
+    global FFMPEG_PATH, FFMPEG_AVAILABLE
+    if path and os.path.isfile(path):
+        FFMPEG_PATH = path
+        d = os.path.dirname(path)
+        if d not in os.environ.get('PATH', ''):
+            os.environ['PATH'] = d + os.pathsep + os.environ.get('PATH', '')
+    FFMPEG_AVAILABLE = None  # 强制重新检测
 
 
 def _check_ffmpeg():
     global FFMPEG_AVAILABLE
     if FFMPEG_AVAILABLE is not None:
         return FFMPEG_AVAILABLE
+
+    # 优先使用显式设置的路径
+    if FFMPEG_PATH and os.path.isfile(FFMPEG_PATH):
+        FFMPEG_AVAILABLE = True
+        return True
 
     # 尝试从常用路径搜索 ffmpeg
     _common_paths = [
@@ -245,7 +298,7 @@ def _check_ffmpeg():
 
     try:
         subprocess.run(['ffmpeg', '-version'],
-                       capture_output=True, timeout=10)
+                       capture_output=True, timeout=10, **_SUB_FLAGS)
         FFMPEG_AVAILABLE = True
     except Exception:
         FFMPEG_AVAILABLE = False
@@ -261,7 +314,7 @@ def has_audio_stream(video_path):
             ['ffprobe', '-i', video_path, '-show_streams',
              '-select_streams', 'a', '-loglevel', 'error',
              '-print_format', 'json'],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, timeout=30, **_SUB_FLAGS
         )
         data = _json.loads(result.stdout)
         return len(data.get('streams', [])) > 0
@@ -275,7 +328,7 @@ def extract_audio(video_path, output_wav_path):
         'ffmpeg', '-i', video_path, '-vn',
         '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2',
         '-y', output_wav_path
-    ], check=True, capture_output=True, timeout=300)
+    ], check=True, capture_output=True, timeout=300, **_SUB_FLAGS)
 
 
 def read_wav(wav_path):
@@ -301,8 +354,8 @@ def write_wav(wav_path, pcm_data, sample_rate, channels=2):
 # ============================================================
 
 def process_video(input_path, output_path, mode='obfuscate',
-                  fps=None, keep_audio=True, block_size=16, seed=42,
-                  progress_callback=None):
+                  fps=None, keep_audio=True, block_size=16, seed=None,
+                  progress_callback=None, original_audio_len=None):
     """
     统一视频处理管线（流式帧处理 + 可选音频混淆）。
 
@@ -313,9 +366,18 @@ def process_video(input_path, output_path, mode='obfuscate',
         fps:         输出帧率 (None = 保持原始帧率)
         keep_audio:  是否处理音频 (需 ffmpeg)
         block_size:  像素块大小
-        seed:        随机种子（保证可逆）
+        seed:        随机种子（None = 自动生成，返回给调用方用于后续解密）
         progress_callback: 可选回调 fn(percent: float, message: str)
+        original_audio_len: 原始音频采样数（解密时传此值可精准裁剪到原始长度）
+
+    Returns:
+        dict: { 'output_path': str, 'seed': int, 'original_audio_len': int }
     """
+    # 自动生成随机种子
+    if seed is None:
+        seed = random.randint(0, 2**31 - 1)
+    _audio_len_saved = original_audio_len  # 可能由调用方传进来的原始长度
+    actual_original_len = 0
     def report(pct, msg):
         if progress_callback:
             progress_callback(pct, msg)
@@ -351,13 +413,21 @@ def process_video(input_path, output_path, mode='obfuscate',
                     extract_audio(input_path, temp_audio_orig)
 
                     pcm_data, sample_rate = read_wav(temp_audio_orig)
-                    report(4, f"音频: {sample_rate}Hz, {len(pcm_data)} 采样点")
+
+                    # 记录原始音频长度（调用方传入优先，否则以实际读取为准）
+                    if _audio_len_saved is not None:
+                        actual_original_len = _audio_len_saved
+                    else:
+                        actual_original_len = len(pcm_data)
+
+                    report(4, f"音频: {sample_rate}Hz, {actual_original_len} 采样点")
 
                     audio_obf = AudioObfuscator(seed=seed)
                     if mode == 'obfuscate':
                         processed = audio_obf.obfuscate(pcm_data, sample_rate)
                     else:
-                        processed = audio_obf.deobfuscate(pcm_data, sample_rate)
+                        processed = audio_obf.deobfuscate(pcm_data, sample_rate,
+                                                          original_length=actual_original_len)
 
                     write_wav(temp_audio_proc, processed, sample_rate)
                     report(6, "音频处理完成")
@@ -389,10 +459,10 @@ def process_video(input_path, output_path, mode='obfuscate',
             '-pix_fmt', 'yuv420p',
         ]
         if has_audio:
-            ffmpeg_cmd += ['-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0']
+            ffmpeg_cmd += ['-c:a', 'alac', '-map', '0:v:0', '-map', '1:a:0']
         ffmpeg_cmd.append(output_path)
 
-        proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
+        proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, **_SUB_FLAGS)
 
         while True:
             ret, frame = cap.read()
@@ -402,14 +472,6 @@ def process_video(input_path, output_path, mode='obfuscate',
             if mode == 'obfuscate':
                 processed = ob.obfuscate_frame(frame)
             else:
-                if frame_count == 0:
-                    ob.height, ob.width = frame.shape[:2]
-                    ob._auto_adjust_block_size(ob.height, ob.width)
-                    ob.num_blocks_x = ob.width // ob.block_size
-                    ob.num_blocks_y = ob.height // ob.block_size
-                    n = ob.num_blocks_x * ob.num_blocks_y
-                    ob.permutation = ob._generate_permutation(n)
-                    ob.inv_permutation = ob._generate_inv_permutation(ob.permutation)
                 processed = ob.deobfuscate_frame(frame)
 
             proc.stdin.write(processed.tobytes())
@@ -427,7 +489,11 @@ def process_video(input_path, output_path, mode='obfuscate',
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-    return output_path
+    return {
+        'output_path': output_path,
+        'seed': seed,
+        'original_audio_len': actual_original_len,
+    }
 
 
 # ============================================================
@@ -446,22 +512,25 @@ def process_video_obfuscation(input_path, output_path, obfuscate=True, fps=None)
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("VideoObfuscation — 视频混淆工具")
+    print("VideoObfuscation — 视频混淆/解混淆工具")
     print("=" * 60)
 
     test_video = r"d:\video-obfuscation\0422.mp4"
     if os.path.exists(test_video):
         obf_path = test_video.replace('.mp4', '_obfuscated.mp4')
-        process_video(test_video, obf_path, mode='obfuscate')
+        r1 = process_video(test_video, obf_path, mode='obfuscate')
 
         rest_path = test_video.replace('.mp4', '_restored.mp4')
-        process_video(obf_path, rest_path, mode='deobfuscate')
+        r2 = process_video(obf_path, rest_path, mode='deobfuscate',
+                           seed=r1['seed'],
+                           original_audio_len=r1['original_audio_len'])
 
         print("\n" + "=" * 60)
         print("测试完成")
         print(f"原始:    {test_video}")
         print(f"混淆:    {obf_path}")
         print(f"复原:    {rest_path}")
+        print(f"种子:    {r1['seed']}")
         print("=" * 60)
     else:
         print(f"测试视频不存在: {test_video}")

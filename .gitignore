@@ -17,3 +17,20 @@ VideoCut4Img/
 .vscode/
 .idea/
 *.swp
+
+# Build artifacts
+build/
+dist/
+dist_exe/
+*.spec.bak
+
+# Release packages
+*.zip
+*.7z
+
+# Bundled binaries (too large for git)
+ffmpeg/
+
+# Package scripts
+package_release.py
+version.txt

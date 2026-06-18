@@ -260,6 +260,11 @@
             color: #3c3;
             border: 1px solid #cfc;
         }
+
+        #seedInput:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+        }
     </style>
 </head>
 <body>
@@ -275,11 +280,21 @@
         <!-- 模式选择 -->
         <div class="mode-selector">
             <button class="mode-btn active" id="obfuscateBtn" onclick="setMode('obfuscate')">
-                🔒 混淆加密
+                混淆加密
             </button>
             <button class="mode-btn" id="deobfuscateBtn" onclick="setMode('deobfuscate')">
-                🔓 解密还原
+                解密还原
             </button>
+        </div>
+
+        <!-- 种子输入（解密模式显示） -->
+        <div class="seed-input-area" id="seedInputArea" style="display:none; margin-bottom: 20px;">
+            <label style="display:block; margin-bottom: 6px; color:#555; font-size:14px; font-weight:500;">
+                加密种子（必填）
+            </label>
+            <input type="text" id="seedInput" placeholder="请输入混淆时生成的加密种子"
+                   style="width:100%; padding:12px 15px; border:2px solid #e0e0e0; border-radius:10px;
+                          font-size:14px; outline:none; box-sizing:border-box; transition:border-color 0.3s;">
         </div>
 
         <div class="upload-area" id="uploadArea">
@@ -311,8 +326,14 @@
         </button>
 
         <div class="result-container" id="resultContainer">
-            <div class="success-icon">✅</div>
             <div class="result-text">视频处理完成！</div>
+            <div id="resultSeedArea" style="display:none; background:#f0f2ff; border-radius:10px; padding:15px; margin-bottom:15px; text-align:center;">
+                <div style="color:#666; font-size:13px; margin-bottom:5px;">加密种子（请务必保存，解密时需使用）</div>
+                <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+                    <span id="resultSeed" style="font-size:20px; font-weight:700; color:#667eea; font-family:monospace;"></span>
+                    <button onclick="copySeed()" style="padding:6px 14px; background:#667eea; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">复制</button>
+                </div>
+            </div>
             <button class="btn btn-success" id="downloadBtn">
                 下载处理后的视频
             </button>
@@ -346,7 +367,10 @@
             currentMode = mode;
             document.getElementById('obfuscateBtn').classList.toggle('active', mode === 'obfuscate');
             document.getElementById('deobfuscateBtn').classList.toggle('active', mode === 'deobfuscate');
-            
+
+            // 种子输入区域：解密模式显示，混淆模式隐藏
+            document.getElementById('seedInputArea').style.display = mode === 'deobfuscate' ? 'block' : 'none';
+
             // 更新按钮文字
             if (mode === 'obfuscate') {
                 processBtn.textContent = '开始混淆';
@@ -450,9 +474,18 @@
 
                 updateProgressUI('upload', 100, '文件上传完成');
 
+                // 解密模式需要种子
+                if (currentMode === 'deobfuscate') {
+                    const seedVal = document.getElementById('seedInput').value.trim();
+                    if (!seedVal) {
+                        throw new Error('解密模式需要提供加密种子');
+                    }
+                }
+
                 // 开始处理 - 根据模式选择不同的API
                 const processUrl = currentMode === 'obfuscate' ? '/api/process' : '/api/deobfuscate';
-                
+
+                const seedVal = document.getElementById('seedInput').value.trim();
                 const processResponse = await fetch(processUrl, {
                     method: 'POST',
                     headers: {
@@ -460,7 +493,7 @@
                     },
                     body: JSON.stringify({
                         file_path: uploadResult.file_path,
-                        output_name: 'output'
+                        seed: seedVal ? parseInt(seedVal) : null
                     })
                 });
 
@@ -514,6 +547,15 @@
 
                     if (data.status === 'completed') {
                         clearInterval(progressInterval);
+                        // 混淆模式下显示种子
+                        const seedArea = document.getElementById('resultSeedArea');
+                        const seedEl = document.getElementById('resultSeed');
+                        if (currentMode === 'obfuscate' && data.seed) {
+                            seedEl.textContent = data.seed;
+                            seedArea.style.display = 'block';
+                        } else {
+                            seedArea.style.display = 'none';
+                        }
                         resultContainer.classList.add('show');
                         processBtn.disabled = false;
                         showSuccess(currentMode === 'obfuscate' ? '视频混淆完成！' : '视频解密完成！');
@@ -526,6 +568,29 @@
                     console.error('获取进度失败:', error);
                 }
             }, 1000);
+        }
+
+        // 复制种子
+        function copySeed() {
+            const seedText = document.getElementById('resultSeed').textContent;
+            navigator.clipboard.writeText(seedText).then(() => {
+                const btn = event.target;
+                const original = btn.textContent;
+                btn.textContent = '已复制';
+                btn.style.background = '#38ef7d';
+                setTimeout(() => {
+                    btn.textContent = original;
+                    btn.style.background = '#667eea';
+                }, 2000);
+            }).catch(() => {
+                // fallback
+                const textarea = document.createElement('textarea');
+                textarea.value = seedText;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            });
         }
 
         // 下载
